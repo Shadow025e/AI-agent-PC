@@ -76,6 +76,27 @@ class MonitoringService:
     def list_alerts(self, limit: int = 100) -> list[dict[str, object]]:
         return self._alerts.list_alerts(limit=limit)
 
+    def current_system_status(self) -> dict[str, object]:
+        snapshot = self._collector.snapshot()
+        if snapshot is None:
+            return {
+                "cpu_percent": None,
+                "ram_percent": None,
+                "disk_percent": None,
+                "battery_percent": None,
+                "battery_status": None,
+            }
+        return {
+            "cpu_percent": snapshot.cpu_percent,
+            "ram_percent": snapshot.ram_percent,
+            "disk_percent": snapshot.disk_percent,
+            "battery_percent": snapshot.battery_percent,
+            "battery_status": snapshot.battery_status,
+        }
+
+    def collector_top_processes(self, limit: int = 5):
+        return self._collector.top_processes(limit=limit)
+
     def log(self, event: str, payload: dict[str, object]) -> None:
         self._audit.log(event, payload)
 
