@@ -28,6 +28,7 @@ class AppConfig:
     project_root: Path
     data_dir: Path
     db_path: Path
+    log_path: Path
     monitoring: MonitoringConfig = field(default_factory=MonitoringConfig)
 
 
@@ -35,4 +36,5 @@ def load_config(project_root: Path | None = None) -> AppConfig:
     root = project_root or Path.cwd()
     data_dir = root / ".data"
     db_path = data_dir / "agent.db"
-    return AppConfig(project_root=root, data_dir=data_dir, db_path=db_path)
+    log_path = data_dir / "app.log"
+    return AppConfig(project_root=root, data_dir=data_dir, db_path=db_path, log_path=log_path)

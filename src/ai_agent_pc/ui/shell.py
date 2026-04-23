@@ -7,6 +7,7 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 
 from ai_agent_pc.db.sqlite import AuditLogger
+from ai_agent_pc.db.sqlite import SettingsRepository
 from ai_agent_pc.monitoring.service import MonitoringService
 from ai_agent_pc.orchestrator.agent_orchestrator import AgentOrchestrator, AgentResponse
 from ai_agent_pc.routines.service import RoutineService
@@ -23,12 +24,14 @@ class UIShell:
         audit_logger: AuditLogger,
         voice: VoiceService,
         routines: RoutineService | None = None,
+        settings: SettingsRepository | None = None,
     ) -> None:
         self.orchestrator = orchestrator
         self.monitoring = monitoring
         self.audit_logger = audit_logger
         self.voice = voice
         self.routines = routines
+        self.settings = settings
         self.root: tk.Tk | None = None
 
         self.chat_output: tk.Text | None = None
@@ -49,6 +52,7 @@ class UIShell:
         self.root = tk.Tk()
         self.root.title("AI Agent PC - Offline MVP")
         self.root.geometry("1080x720")
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
         self.offline_var = tk.StringVar(value="● Offline Mode")
         self.recording_state_var = tk.StringVar(value="Mic: idle")
@@ -204,6 +208,19 @@ class UIShell:
             self.voice.settings.tts_enabled = self.tts_enabled_var.get()
         if self.push_to_talk_var is not None:
             self.voice.settings.push_to_talk = self.push_to_talk_var.get()
+        self._persist_voice_settings()
+
+    def _persist_voice_settings(self) -> None:
+        if self.settings is None:
+            return
+        self.settings.set_json(
+            "voice",
+            {
+                "stt_enabled": self.voice.settings.stt_enabled,
+                "tts_enabled": self.voice.settings.tts_enabled,
+                "push_to_talk": self.voice.settings.push_to_talk,
+            },
+        )
 
     def _send_chat(self) -> None:
         if self.chat_input is None:
@@ -310,3 +327,8 @@ class UIShell:
         widget.delete("1.0", tk.END)
         widget.insert(tk.END, value)
         widget.configure(state=tk.DISABLED)
+
+    def _on_close(self) -> None:
+        self._persist_voice_settings()
+        if self.root is not None:
+            self.root.destroy()

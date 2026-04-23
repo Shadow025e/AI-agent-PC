@@ -37,6 +37,15 @@ def initialize_sqlite(db_path: Path) -> None:
     with sqlite3.connect(db_path) as conn:
         conn.execute(
             """
+            CREATE TABLE IF NOT EXISTS app_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS app_events (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 event TEXT NOT NULL,
@@ -135,6 +144,38 @@ class AuditLogger:
             payload["payload"] = json.loads(payload["payload"] or "{}")
             events.append(payload)
         return events
+
+
+class SettingsRepository:
+    """JSON settings storage for local runtime preferences."""
+
+    def __init__(self, db_path: Path) -> None:
+        self._db = SQLiteDatabase(db_path)
+
+    def get_json(self, key: str, default: dict[str, object] | None = None) -> dict[str, object]:
+        with self._db.connect() as conn:
+            row = conn.execute("SELECT value FROM app_settings WHERE key = ?", (key,)).fetchone()
+        if row is None:
+            return default or {}
+        try:
+            value = json.loads(str(row[0]))
+        except json.JSONDecodeError:
+            return default or {}
+        return value if isinstance(value, dict) else (default or {})
+
+    def set_json(self, key: str, payload: dict[str, object]) -> None:
+        with self._db.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO app_settings(key, value, updated_at)
+                VALUES(?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(key) DO UPDATE SET
+                    value=excluded.value,
+                    updated_at=CURRENT_TIMESTAMP
+                """,
+                (key, json.dumps(payload, sort_keys=True)),
+            )
+            conn.commit()
 
 
 class TrustedTargetRepository:

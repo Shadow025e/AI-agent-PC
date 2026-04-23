@@ -1,98 +1,117 @@
-# AI-agent-PC
+# AI-agent-PC (Offline Desktop Assistant MVP)
 
-Local-first, Python-based AI agent scaffold focused on secure orchestration and modular extensibility.
+AI-agent-PC is a **local-only desktop assistant MVP** designed to run offline with a Tkinter UI, SQLite persistence, guarded system tools, monitoring alerts, routines, and mock/partial voice support.
 
-## MVP scaffold scope (this step)
+## What this MVP is
 
-This repository currently includes only foundational structure:
+A stable, usable local app focused on:
 
-- package/module layout for core layers
-- minimal app shell entrypoint
-- local SQLite bootstrap
-- placeholder interfaces with TODO markers
-- basic tests
+- clean startup and shutdown lifecycle
+- background monitoring with safe thread handling
+- auditable local actions/events
+- SQLite-backed persistence (alerts, routines, trusted targets, settings)
+- minimal but functional desktop UX for core flows
 
-### Not implemented yet
+## Core features
 
-- full agent planning/execution logic
-- online/cloud integrations
-- production security policy engine
-- native offline audio engine integrations (STT/TTS currently mock adapters)
+- **Chat assistant panel**
+  - text input routed through a local orchestrator
+  - structured assistant responses
+  - permission-aware handling for safe/medium/high-risk actions
+- **System tools (offline placeholders + local reads)**
+  - current system status
+  - top processes
+  - trusted app/folder action placeholders
+- **Monitoring + alerts**
+  - periodic local checks (CPU/RAM/Disk/process heuristics)
+  - alert deduplication window
+  - persisted alerts in SQLite
+- **Routines**
+  - SQLite-backed built-in routines
+  - permission checks + trusted-target validation per step
+- **Voice (mock/partial)**
+  - push-to-talk/start-stop UX
+  - mock STT/TTS adapters for local integration testing
+  - voice toggles persisted in SQLite settings
+- **Audit logging**
+  - local app events and action outcomes saved in SQLite
+  - application log file at `.data/app.log`
 
-## Project layout
+## Installation
 
-```text
-src/ai_agent_pc/
-  app.py                 # app composition shell
-  main.py                # CLI entrypoint
-  config.py              # base config loader
-  ui/
-  orchestrator/
-  tools/
-  security/
-  monitoring/
-  db/
-  routines/
-  voice/
-scripts/
-  init_db.py             # SQLite bootstrap entrypoint
-tests/
-```
+### Requirements
 
+- Python 3.11+
+- tkinter available in your Python runtime (usually included in standard Python installers)
 
-## Offline voice MVP (current)
+### Steps
 
-Implemented in this step:
-
-- offline voice service layer with pluggable STT/TTS adapter interfaces
-- mock local recorder + STT + TTS adapters for architecture validation
-- chat UI microphone flow (start/stop + hold-to-talk)
-- transcription injection into the same orchestrator path used by typed text
-- optional assistant response speech toggle (mock TTS)
-
-Deferred (explicit TODO integration points):
-
-- whisper.cpp (or equivalent) binding for real offline STT
-- native/local offline TTS engine playback
-- platform audio device selection and persistence
-
-## Setup
-
-1. Create a virtual environment and activate it.
-2. Install package in editable mode with dev dependencies:
+1. Clone the repository.
+2. Create and activate a virtual environment.
+3. Install in editable mode:
 
 ```bash
 pip install -e .[dev]
 ```
 
-## Run scaffold
+## How to run
+
+### Start the desktop app
 
 ```bash
 ai-agent-pc
 ```
 
-or:
+or
 
 ```bash
 python -m ai_agent_pc.main
 ```
 
-Initialize SQLite explicitly:
+### Optional: initialize DB ahead of time
 
 ```bash
 python scripts/init_db.py
 ```
 
-## Run tests
+### Run tests
 
 ```bash
 pytest
 ```
 
-## Next implementation priorities
+## Runtime behavior
 
-1. Build permission scopes and consent workflows.
-2. Implement orchestrator execution loop with guarded tool calls.
-3. Add SQLite-backed monitoring/event persistence.
-4. Replace mock STT/TTS/recording adapters with native offline engines.
-5. Expand settings persistence and richer voice UX controls.
+- App bootstraps `.data/agent.db` and schema automatically.
+- Monitoring starts in a background daemon thread at app startup.
+- Monitoring stops cleanly on app shutdown.
+- Voice settings (`stt_enabled`, `tts_enabled`, `push_to_talk`) persist in SQLite.
+- Fatal startup/runtime exceptions are logged and surfaced with a clear CLI message.
+
+## Current limitations
+
+- No cloud/online integrations (intentional).
+- STT/TTS are mock adapters (architecture ready, engine integration pending).
+- Tool actions are intentionally conservative placeholders for MVP safety.
+- UI is Tkinter-based and intentionally minimal.
+
+## Packaging notes (basic)
+
+A simple executable build path is feasible with PyInstaller:
+
+```bash
+pip install pyinstaller
+pyinstaller --onefile -n ai-agent-pc src/ai_agent_pc/main.py
+```
+
+Notes:
+- Validate tkinter support in the target OS image.
+- Test read/write permissions for the `.data/` directory where SQLite and logs are stored.
+
+## Roadmap (next stability-focused steps)
+
+1. Replace mock STT/TTS with real offline engines (e.g., whisper.cpp + local TTS).
+2. Expand settings UI to persist monitoring thresholds and trusted target edits.
+3. Add richer error surfacing in UI (non-blocking toast/panel + retry guidance).
+4. Add platform packaging scripts and signed distributions per OS.
+5. Add more end-to-end integration tests around UI-triggered lifecycle transitions.
