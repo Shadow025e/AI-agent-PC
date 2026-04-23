@@ -1,11 +1,8 @@
-"""Routine placeholders."""
+"""Shared routine contracts."""
 
 
 class Routine:
-    """Base routine contract.
-
-    TODO: Define routine lifecycle and state contract.
-    """
+    """Base routine contract used by compatibility imports."""
 
     name = "base"
 

@@ -52,12 +52,16 @@ class MonitoringService:
         self.log("monitoring_stopped", {})
 
     def check_once(self) -> None:
-        snapshot = self._collector.snapshot()
-        processes = self._collector.top_processes()
-        startup_entries = self._collector.startup_entries()
-        recent_crashes = self._collector.recent_crash_count(
-            window_seconds=self._config.repeated_high_window_seconds
-        )
+        try:
+            snapshot = self._collector.snapshot()
+            processes = self._collector.top_processes()
+            startup_entries = self._collector.startup_entries()
+            recent_crashes = self._collector.recent_crash_count(
+                window_seconds=self._config.repeated_high_window_seconds
+            )
+        except Exception as exc:  # pragma: no cover - defensive monitoring boundary
+            self.log("monitoring_check_failed", {"error": str(exc)})
+            return
         alerts = self._detector.evaluate(snapshot, processes, startup_entries, recent_crashes)
 
         for alert in alerts:

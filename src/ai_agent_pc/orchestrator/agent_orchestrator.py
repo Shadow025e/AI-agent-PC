@@ -38,7 +38,8 @@ class AgentOrchestrator:
         self._pending_actions: dict[str, tuple[str, RiskLevel]] = {}
 
     def handle_request(self, request_text: str) -> AgentResponse:
-        action, risk = self._classify_request(request_text)
+        action, fallback_risk = self._classify_request(request_text)
+        risk = self._resolve_risk(action, fallback_risk)
         decision = self.permissions.evaluate(action, risk)
 
         if decision.decision is PermissionDecision.BLOCK:
@@ -104,10 +105,17 @@ class AgentOrchestrator:
     def _execute_action(self, action: str) -> AgentResponse:
         tool = self.tools.get(action)
         if tool is not None:
-            spec, handler = tool
-            result = handler({})
+            spec, _ = tool
+            result = self.tools.execute(spec.name, {})
             return AgentResponse(status=result.status, message=result.message, data=result.data, action=spec.name)
         return AgentResponse(status="ok", message="Request recorded. No matching action executed.", data={"echo": action})
+
+    def _resolve_risk(self, action: str, fallback_risk: RiskLevel) -> RiskLevel:
+        tool = self.tools.get(action)
+        if tool is None:
+            return fallback_risk
+        spec, _ = tool
+        return spec.risk
 
     def _classify_request(self, text: str) -> tuple[str, RiskLevel]:
         query = text.strip().lower()
