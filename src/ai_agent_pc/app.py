@@ -1,7 +1,7 @@
 """Minimal runnable app shell."""
 
 from ai_agent_pc.config import load_config
-from ai_agent_pc.db.sqlite import initialize_sqlite
+from ai_agent_pc.db.sqlite import AuditLogger, initialize_sqlite
 from ai_agent_pc.monitoring.service import MonitoringService
 from ai_agent_pc.orchestrator.agent_orchestrator import AgentOrchestrator
 from ai_agent_pc.security.permissions import PermissionManager
@@ -25,11 +25,16 @@ class App:
             tools=self.tools,
             monitoring=self.monitoring,
         )
-        self.ui = UIShell(orchestrator=self.orchestrator)
+        self.audit_logger = AuditLogger(self.config.db_path)
+        self.ui = UIShell(
+            orchestrator=self.orchestrator,
+            monitoring=self.monitoring,
+            audit_logger=self.audit_logger,
+        )
 
     def run(self) -> None:
         initialize_sqlite(self.config.db_path)
-        self.monitoring.log("app_started", {"db_path": str(self.config.db_path)})
+        self.monitoring.log("app_started", {"db_path": str(self.config.db_path), "mode": "offline"})
         self.ui.render_welcome()
 
 

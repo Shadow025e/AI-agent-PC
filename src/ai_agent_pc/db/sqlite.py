@@ -62,6 +62,28 @@ class AuditLogger:
             conn.commit()
 
 
+    def list_events(self, limit: int = 100) -> list[dict[str, object]]:
+        initialize_sqlite(self.db_path)
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT id, event, payload, created_at
+                FROM app_events
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+
+        events: list[dict[str, object]] = []
+        for row in rows:
+            payload = dict(row)
+            payload["payload"] = json.loads(payload["payload"] or "{}")
+            events.append(payload)
+        return events
+
+
 class AlertRepository:
     """Persists and queries monitoring alerts, with deduplication support."""
 
