@@ -9,6 +9,7 @@ from tkinter import messagebox, ttk
 from ai_agent_pc.db.sqlite import AuditLogger
 from ai_agent_pc.monitoring.service import MonitoringService
 from ai_agent_pc.orchestrator.agent_orchestrator import AgentOrchestrator, AgentResponse
+from ai_agent_pc.routines.service import RoutineService
 from ai_agent_pc.voice.service import RecordingState, VoiceService
 
 
@@ -21,11 +22,13 @@ class UIShell:
         monitoring: MonitoringService,
         audit_logger: AuditLogger,
         voice: VoiceService,
+        routines: RoutineService | None = None,
     ) -> None:
         self.orchestrator = orchestrator
         self.monitoring = monitoring
         self.audit_logger = audit_logger
         self.voice = voice
+        self.routines = routines
         self.root: tk.Tk | None = None
 
         self.chat_output: tk.Text | None = None
@@ -34,6 +37,7 @@ class UIShell:
         self.alerts_text: tk.Text | None = None
         self.history_text: tk.Text | None = None
         self.offline_var: tk.StringVar | None = None
+        self.routine_choice_var: tk.StringVar | None = None
 
         self.recording_state_var: tk.StringVar | None = None
         self.transcription_var: tk.StringVar | None = None
@@ -63,18 +67,21 @@ class UIShell:
         alerts_tab = ttk.Frame(notebook)
         history_tab = ttk.Frame(notebook)
         settings_tab = ttk.Frame(notebook)
+        routines_tab = ttk.Frame(notebook)
 
         notebook.add(chat_tab, text="Chat")
         notebook.add(status_tab, text="System Status")
         notebook.add(alerts_tab, text="Alerts")
         notebook.add(history_tab, text="Action History")
         notebook.add(settings_tab, text="Settings")
+        notebook.add(routines_tab, text="Routines")
 
         self._build_chat_panel(chat_tab)
         self._build_status_panel(status_tab)
         self._build_alerts_panel(alerts_tab)
         self._build_history_panel(history_tab)
         self._build_settings_panel(settings_tab)
+        self._build_routines_panel(routines_tab)
 
         self.refresh_all()
         self.root.mainloop()
@@ -127,6 +134,18 @@ class UIShell:
         self.history_text = tk.Text(parent, wrap=tk.WORD, state=tk.DISABLED)
         self.history_text.pack(fill=tk.BOTH, expand=True, padx=8, pady=(0, 8))
 
+
+    def _build_routines_panel(self, parent: ttk.Frame) -> None:
+        row = ttk.Frame(parent)
+        row.pack(fill=tk.X, padx=8, pady=8)
+        self.routine_choice_var = tk.StringVar(value="Study Mode")
+        routines = [r.name for r in self.routines.list_routines()] if self.routines else []
+        if routines:
+            self.routine_choice_var.set(routines[0])
+        combo = ttk.Combobox(row, textvariable=self.routine_choice_var, values=routines, state="readonly")
+        combo.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        ttk.Button(row, text="Run routine", command=self._run_selected_routine).pack(side=tk.LEFT, padx=6)
+
     def _build_settings_panel(self, parent: ttk.Frame) -> None:
         form = ttk.Frame(parent)
         form.pack(fill=tk.BOTH, expand=True, padx=12, pady=12)
@@ -156,6 +175,27 @@ class UIShell:
         ttk.Label(row, text=label, width=24).pack(side=tk.LEFT)
         ttk.Entry(row).pack(side=tk.LEFT, fill=tk.X, expand=True)
         ttk.Label(row, text=value, foreground="gray").pack(side=tk.LEFT, padx=8)
+
+
+    def _run_selected_routine(self) -> None:
+        if self.routine_choice_var is None:
+            return
+        name = self.routine_choice_var.get().strip()
+        if not name:
+            return
+        response = self.orchestrator.execute_routine(name=name, confirm_medium=False)
+        if response.status == "confirmation_required":
+            approved = messagebox.askyesno(
+                "Routine confirmation",
+                f"Routine '{name}' includes medium-risk steps. Continue?",
+                parent=self.root,
+            )
+            if approved:
+                response = self.orchestrator.execute_routine(name=name, confirm_medium=True)
+            else:
+                response = AgentResponse(status="cancelled", message=f"Routine '{name}' cancelled.")
+        self._append_structured_response(response)
+        self.refresh_all()
 
     def _sync_voice_settings(self) -> None:
         if self.stt_enabled_var is not None:
