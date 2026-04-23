@@ -154,7 +154,11 @@ class ResourceDetector:
 
     def _startup_alerts(self, startup_entries: list[str]) -> list[Alert]:
         suspicious_tokens = ("tmp", "powershell", "base64", "curl", "wget")
-        hits = [entry for entry in startup_entries if any(token in entry for token in suspicious_tokens)]
+        hits = [
+            entry
+            for entry in startup_entries
+            if any(token in entry.lower() for token in suspicious_tokens)
+        ]
         if not hits:
             return []
         return [

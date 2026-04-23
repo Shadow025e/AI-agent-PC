@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
+import traceback
 
 from ai_agent_pc.monitoring.service import MonitoringService
 from ai_agent_pc.security.permissions import RiskLevel
@@ -47,6 +48,30 @@ class ToolRegistry:
 
     def get(self, name: str) -> tuple[ToolSpec, ToolHandler] | None:
         return self._tools.get(name)
+
+    def execute(self, name: str, args: dict[str, object] | None = None) -> ToolExecutionResult:
+        tool = self.get(name)
+        if tool is None:
+            return ToolExecutionResult(status="error", message=f"Unknown tool '{name}'.")
+
+        spec, handler = tool
+        try:
+            return handler(args or {})
+        except Exception as exc:  # pragma: no cover - defensive boundary
+            if self._monitoring is not None:
+                self._monitoring.log(
+                    "tool_execution_failed",
+                    {
+                        "tool": spec.name,
+                        "error": str(exc),
+                        "traceback": traceback.format_exc(limit=3),
+                    },
+                )
+            return ToolExecutionResult(
+                status="error",
+                message=f"Tool '{spec.name}' failed: {exc}",
+                data={"tool": spec.name},
+            )
 
     def _register_builtin_tools(self) -> None:
         self.register(
@@ -91,7 +116,11 @@ class ToolRegistry:
         return ToolExecutionResult(status="ok", message="System status fetched.", data={"system_status": status})
 
     def _list_processes(self, args: dict[str, object]) -> ToolExecutionResult:
-        limit = int(args.get("limit", 10))
+        try:
+            limit = int(args.get("limit", 10))
+        except (TypeError, ValueError):
+            limit = 10
+        limit = max(1, min(limit, 100))
         processes = self._monitoring.collector_top_processes(limit=limit) if self._monitoring else []
         return ToolExecutionResult(
             status="ok",
@@ -103,7 +132,7 @@ class ToolRegistry:
         return ToolExecutionResult(
             status="ok",
             message="Close-app automation is not enabled in MVP; suggestion-only placeholder executed.",
-            data={"todo": "Integrate close-app tool when implemented."},
+            data={"note": "Automation disabled in offline MVP."},
         )
 
     def _high_risk_placeholder(self, _args: dict[str, object]) -> ToolExecutionResult:

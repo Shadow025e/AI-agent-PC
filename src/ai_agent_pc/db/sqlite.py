@@ -10,10 +10,29 @@ import sqlite3
 from ai_agent_pc.monitoring.models import Alert
 from ai_agent_pc.routines.models import Routine, RoutineStep
 
+_INITIALIZED_DB_PATHS: set[Path] = set()
+
+
+class SQLiteDatabase:
+    """Shared SQLite access layer that enforces schema initialization."""
+
+    def __init__(self, db_path: Path) -> None:
+        self.db_path = db_path
+
+    def connect(self, *, row_factory: bool = False) -> sqlite3.Connection:
+        initialize_sqlite(self.db_path)
+        conn = sqlite3.connect(self.db_path)
+        if row_factory:
+            conn.row_factory = sqlite3.Row
+        return conn
+
 
 def initialize_sqlite(db_path: Path) -> None:
     """Initialize local SQLite database and run bootstrap migration."""
 
+    db_path = db_path.resolve()
+    if db_path in _INITIALIZED_DB_PATHS:
+        return
     db_path.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(db_path) as conn:
         conn.execute(
@@ -81,17 +100,17 @@ def initialize_sqlite(db_path: Path) -> None:
         conn.commit()
     _seed_default_trusted_targets(db_path)
     _seed_builtin_routines(db_path)
+    _INITIALIZED_DB_PATHS.add(db_path)
 
 
 class AuditLogger:
     """Simple audit/event logger backed by app_events."""
 
     def __init__(self, db_path: Path) -> None:
-        self.db_path = db_path
+        self._db = SQLiteDatabase(db_path)
 
     def log(self, event: str, payload: dict[str, object]) -> None:
-        initialize_sqlite(self.db_path)
-        with sqlite3.connect(self.db_path) as conn:
+        with self._db.connect() as conn:
             conn.execute(
                 "INSERT INTO app_events(event, payload) VALUES(?, ?)",
                 (event, json.dumps(payload, sort_keys=True)),
@@ -99,9 +118,7 @@ class AuditLogger:
             conn.commit()
 
     def list_events(self, limit: int = 100) -> list[dict[str, object]]:
-        initialize_sqlite(self.db_path)
-        with sqlite3.connect(self.db_path) as conn:
-            conn.row_factory = sqlite3.Row
+        with self._db.connect(row_factory=True) as conn:
             rows = conn.execute(
                 """
                 SELECT id, event, payload, created_at
@@ -124,7 +141,7 @@ class TrustedTargetRepository:
     """Trusted apps/paths allowlist storage."""
 
     def __init__(self, db_path: Path) -> None:
-        self.db_path = db_path
+        self._db = SQLiteDatabase(db_path)
 
     def list_trusted_apps(self) -> list[str]:
         return self._list_by_type("app")
@@ -137,8 +154,7 @@ class TrustedTargetRepository:
         return app_norm in {a.lower() for a in self.list_trusted_apps()}
 
     def _list_by_type(self, target_type: str) -> list[str]:
-        initialize_sqlite(self.db_path)
-        with sqlite3.connect(self.db_path) as conn:
+        with self._db.connect() as conn:
             rows = conn.execute(
                 "SELECT value FROM trusted_targets WHERE target_type = ? ORDER BY value ASC",
                 (target_type,),
@@ -150,12 +166,10 @@ class RoutineRepository:
     """Routine definitions + steps persistence for extensible workflows."""
 
     def __init__(self, db_path: Path) -> None:
-        self.db_path = db_path
+        self._db = SQLiteDatabase(db_path)
 
     def list_routines(self) -> list[Routine]:
-        initialize_sqlite(self.db_path)
-        with sqlite3.connect(self.db_path) as conn:
-            conn.row_factory = sqlite3.Row
+        with self._db.connect(row_factory=True) as conn:
             routine_rows = conn.execute(
                 "SELECT id, name, description, built_in FROM routines ORDER BY name ASC"
             ).fetchall()
@@ -198,7 +212,7 @@ class AlertRepository:
     """Persists and queries monitoring alerts, with deduplication support."""
 
     def __init__(self, db_path: Path) -> None:
-        self.db_path = db_path
+        self._db = SQLiteDatabase(db_path)
 
     def store_alert(self, alert: Alert, dedup_window_seconds: int) -> bool:
         """Store alert and deduplicate by fingerprint in a rolling time window.
@@ -206,9 +220,7 @@ class AlertRepository:
         Returns True when a new row is inserted, False when an existing alert is updated.
         """
 
-        initialize_sqlite(self.db_path)
-        with sqlite3.connect(self.db_path) as conn:
-            conn.row_factory = sqlite3.Row
+        with self._db.connect(row_factory=True) as conn:
             existing = conn.execute(
                 """
                 SELECT id, last_seen, occurrence_count
@@ -259,9 +271,7 @@ class AlertRepository:
             return True
 
     def list_alerts(self, limit: int = 100) -> list[dict[str, object]]:
-        initialize_sqlite(self.db_path)
-        with sqlite3.connect(self.db_path) as conn:
-            conn.row_factory = sqlite3.Row
+        with self._db.connect(row_factory=True) as conn:
             rows = conn.execute(
                 """
                 SELECT id, level, category, message, fingerprint, details, first_seen, last_seen, occurrence_count
@@ -290,7 +300,6 @@ def _parse_iso8601(value: str) -> datetime:
 
 
 def _seed_default_trusted_targets(db_path: Path) -> None:
-    initialize_sqlite_seed_guard(db_path)
     with sqlite3.connect(db_path) as conn:
         trusted_defaults = [
             ("app", "notes"),
@@ -306,7 +315,6 @@ def _seed_default_trusted_targets(db_path: Path) -> None:
 
 
 def _seed_builtin_routines(db_path: Path) -> None:
-    initialize_sqlite_seed_guard(db_path)
     routines = [
         (
             "Study Mode",
@@ -355,15 +363,4 @@ def _seed_builtin_routines(db_path: Path) -> None:
                     """,
                     (routine_id, order, tool, json.dumps(args, sort_keys=True)),
                 )
-        conn.commit()
-
-
-def initialize_sqlite_seed_guard(db_path: Path) -> None:
-    """Ensure schema exists before seeding without recursive seeding."""
-
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(db_path) as conn:
-        conn.execute("CREATE TABLE IF NOT EXISTS trusted_targets (id INTEGER PRIMARY KEY AUTOINCREMENT, target_type TEXT NOT NULL, value TEXT NOT NULL, UNIQUE(target_type, value))")
-        conn.execute("CREATE TABLE IF NOT EXISTS routines (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, description TEXT NOT NULL, built_in INTEGER NOT NULL DEFAULT 0)")
-        conn.execute("CREATE TABLE IF NOT EXISTS routine_steps (id INTEGER PRIMARY KEY AUTOINCREMENT, routine_id INTEGER NOT NULL, step_order INTEGER NOT NULL, tool_name TEXT NOT NULL, args_json TEXT)")
         conn.commit()

@@ -63,8 +63,21 @@ class RoutineService:
                 return RoutineExecutionResult(routine.name, "blocked", results, validation_error)
 
             spec_and_handler = self._tools.get(step.tool_name)
-            assert spec_and_handler is not None
-            spec, handler = spec_and_handler
+            if spec_and_handler is None:
+                result = RoutineStepResult(
+                    routine_name=routine.name,
+                    step_id=step.id,
+                    tool_name=step.tool_name,
+                    risk=RiskLevel.HIGH,
+                    status="error",
+                    message=f"Unknown tool '{step.tool_name}' in routine step.",
+                    blocked=True,
+                )
+                results.append(result)
+                self._log_step(result)
+                return RoutineExecutionResult(routine.name, "error", results, result.message)
+
+            spec, _ = spec_and_handler
             decision = self._permissions.evaluate(step.tool_name, spec.risk)
 
             if decision.decision is PermissionDecision.BLOCK:
@@ -95,7 +108,7 @@ class RoutineService:
                 self._log_step(result)
                 return RoutineExecutionResult(routine.name, "confirmation_required", results, decision.reason)
 
-            exec_result = handler(step.args)
+            exec_result = self._tools.execute(step.tool_name, step.args)
             result = RoutineStepResult(
                 routine_name=routine.name,
                 step_id=step.id,
