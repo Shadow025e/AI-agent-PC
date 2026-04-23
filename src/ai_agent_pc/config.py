@@ -1,19 +1,34 @@
 """Base runtime configuration for local scaffold."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 
 @dataclass(frozen=True)
-class AppConfig:
-    """Application paths and local runtime defaults.
+class MonitoringConfig:
+    """Tunable local monitoring thresholds and cadence."""
 
-    TODO: Expand with structured settings validation and environment overrides.
-    """
+    polling_interval_seconds: float = 5.0
+    high_cpu_percent: float = 85.0
+    high_ram_percent: float = 85.0
+    high_disk_percent: float = 92.0
+    high_process_cpu_percent: float = 90.0
+    high_process_ram_percent: float = 25.0
+    spike_delta_percent: float = 30.0
+    repeated_high_count: int = 3
+    repeated_high_window_seconds: int = 300
+    frequent_crash_threshold: int = 3
+    dedup_window_seconds: int = 120
+
+
+@dataclass(frozen=True)
+class AppConfig:
+    """Application paths and local runtime defaults."""
 
     project_root: Path
     data_dir: Path
     db_path: Path
+    monitoring: MonitoringConfig = field(default_factory=MonitoringConfig)
 
 
 def load_config(project_root: Path | None = None) -> AppConfig:

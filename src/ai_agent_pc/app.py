@@ -10,15 +10,15 @@ from ai_agent_pc.ui.shell import UIShell
 
 
 class App:
-    """Coordinates top-level components for local execution.
-
-    TODO: Add lifecycle hooks, graceful shutdown, and dependency wiring.
-    """
+    """Coordinates top-level components for local execution."""
 
     def __init__(self) -> None:
         self.config = load_config()
         self.permissions = PermissionManager()
-        self.monitoring = MonitoringService()
+        self.monitoring = MonitoringService(
+            db_path=self.config.db_path,
+            config=self.config.monitoring,
+        )
         self.tools = ToolRegistry()
         self.orchestrator = AgentOrchestrator(
             permissions=self.permissions,
