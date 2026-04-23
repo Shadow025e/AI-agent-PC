@@ -5,4 +5,4 @@ def test_create_app_initializes_components() -> None:
     app = create_app()
 
     assert app.orchestrator is not None
-    assert app.tools.list_tools() == []
+    assert "get_system_status" in app.tools.list_tools()

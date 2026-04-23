@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 
 from ai_agent_pc.monitoring.service import MonitoringService
+from ai_agent_pc.routines.service import RoutineService
 from ai_agent_pc.security.permissions import PermissionDecision, PermissionManager, RiskLevel
 from ai_agent_pc.tools.registry import ToolRegistry
 
@@ -27,10 +29,12 @@ class AgentOrchestrator:
         permissions: PermissionManager,
         tools: ToolRegistry,
         monitoring: MonitoringService,
+        routines: RoutineService | None = None,
     ) -> None:
         self.permissions = permissions
         self.tools = tools
         self.monitoring = monitoring
+        self.routines = routines
         self._pending_actions: dict[str, tuple[str, RiskLevel]] = {}
 
     def handle_request(self, request_text: str) -> AgentResponse:
@@ -86,29 +90,23 @@ class AgentOrchestrator:
         )
         return result
 
+    def execute_routine(self, name: str, confirm_medium: bool = False) -> AgentResponse:
+        if self.routines is None:
+            return AgentResponse(status="error", message="Routine service is not configured.")
+        result = self.routines.run_routine(name=name, confirm_medium=confirm_medium)
+        return AgentResponse(
+            status=result.status,
+            message=result.message,
+            data={"routine": result.routine_name, "steps": [step.__dict__ for step in result.steps]},
+            action=f"routine:{name}",
+        )
+
     def _execute_action(self, action: str) -> AgentResponse:
-        if action == "get_system_status":
-            return AgentResponse(
-                status="ok",
-                message="System status fetched.",
-                data={"system_status": self.monitoring.current_system_status()},
-                action=action,
-            )
-        if action == "list_alerts":
-            return AgentResponse(
-                status="ok",
-                message="Alerts fetched.",
-                data={"alerts": self.monitoring.list_alerts(limit=50)},
-                action=action,
-            )
-        if action == "list_processes":
-            processes = self.monitoring.collector_top_processes(limit=10)
-            return AgentResponse(
-                status="ok",
-                message="Top processes fetched.",
-                data={"processes": [p.__dict__ for p in processes]},
-                action=action,
-            )
+        tool = self.tools.get(action)
+        if tool is not None:
+            spec, handler = tool
+            result = handler({})
+            return AgentResponse(status=result.status, message=result.message, data=result.data, action=spec.name)
         return AgentResponse(status="ok", message="Request recorded. No matching action executed.", data={"echo": action})
 
     def _classify_request(self, text: str) -> tuple[str, RiskLevel]:
@@ -127,3 +125,9 @@ class AgentOrchestrator:
     def _new_action_id(action: str) -> str:
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
         return f"{action}-{timestamp}"
+
+
+def build_routine_service(db_path: Path, tools: ToolRegistry, permissions: PermissionManager, monitoring: MonitoringService) -> RoutineService:
+    from ai_agent_pc.db.sqlite import AuditLogger
+
+    return RoutineService(db_path=db_path, tools=tools, permissions=permissions, audit=AuditLogger(db_path))
