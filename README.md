@@ -17,7 +17,7 @@ This repository currently includes only foundational structure:
 - full agent planning/execution logic
 - online/cloud integrations
 - production security policy engine
-- rich UI and voice feature implementation
+- native offline audio engine integrations (STT/TTS currently mock adapters)
 
 ## Project layout
 
@@ -38,6 +38,23 @@ scripts/
   init_db.py             # SQLite bootstrap entrypoint
 tests/
 ```
+
+
+## Offline voice MVP (current)
+
+Implemented in this step:
+
+- offline voice service layer with pluggable STT/TTS adapter interfaces
+- mock local recorder + STT + TTS adapters for architecture validation
+- chat UI microphone flow (start/stop + hold-to-talk)
+- transcription injection into the same orchestrator path used by typed text
+- optional assistant response speech toggle (mock TTS)
+
+Deferred (explicit TODO integration points):
+
+- whisper.cpp (or equivalent) binding for real offline STT
+- native/local offline TTS engine playback
+- platform audio device selection and persistence
 
 ## Setup
 
@@ -77,5 +94,5 @@ pytest
 1. Build permission scopes and consent workflows.
 2. Implement orchestrator execution loop with guarded tool calls.
 3. Add SQLite-backed monitoring/event persistence.
-4. Flesh out routines and voice adapters with local/offline providers.
-5. Expand UI from shell placeholder into interactive experience.
+4. Replace mock STT/TTS/recording adapters with native offline engines.
+5. Expand settings persistence and richer voice UX controls.
