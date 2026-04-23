@@ -9,6 +9,7 @@ from tkinter import messagebox, ttk
 from ai_agent_pc.db.sqlite import AuditLogger
 from ai_agent_pc.monitoring.service import MonitoringService
 from ai_agent_pc.orchestrator.agent_orchestrator import AgentOrchestrator, AgentResponse
+from ai_agent_pc.voice.service import RecordingState, VoiceService
 
 
 class UIShell:
@@ -19,10 +20,12 @@ class UIShell:
         orchestrator: AgentOrchestrator,
         monitoring: MonitoringService,
         audit_logger: AuditLogger,
+        voice: VoiceService,
     ) -> None:
         self.orchestrator = orchestrator
         self.monitoring = monitoring
         self.audit_logger = audit_logger
+        self.voice = voice
         self.root: tk.Tk | None = None
 
         self.chat_output: tk.Text | None = None
@@ -32,12 +35,20 @@ class UIShell:
         self.history_text: tk.Text | None = None
         self.offline_var: tk.StringVar | None = None
 
+        self.recording_state_var: tk.StringVar | None = None
+        self.transcription_var: tk.StringVar | None = None
+        self.stt_enabled_var: tk.BooleanVar | None = None
+        self.tts_enabled_var: tk.BooleanVar | None = None
+        self.push_to_talk_var: tk.BooleanVar | None = None
+
     def render_welcome(self) -> None:
         self.root = tk.Tk()
         self.root.title("AI Agent PC - Offline MVP")
         self.root.geometry("1080x720")
 
         self.offline_var = tk.StringVar(value="● Offline Mode")
+        self.recording_state_var = tk.StringVar(value="Mic: idle")
+        self.transcription_var = tk.StringVar(value="Last transcription: (none)")
 
         header = ttk.Frame(self.root)
         header.pack(fill=tk.X, padx=12, pady=8)
@@ -71,6 +82,18 @@ class UIShell:
     def _build_chat_panel(self, parent: ttk.Frame) -> None:
         self.chat_output = tk.Text(parent, wrap=tk.WORD, state=tk.DISABLED)
         self.chat_output.pack(fill=tk.BOTH, expand=True, padx=8, pady=(8, 6))
+
+        voice_row = ttk.Frame(parent)
+        voice_row.pack(fill=tk.X, padx=8, pady=(0, 6))
+        mic_btn = ttk.Button(voice_row, text="Hold to Talk")
+        mic_btn.pack(side=tk.LEFT)
+        mic_btn.bind("<ButtonPress-1>", lambda _e: self._start_recording())
+        mic_btn.bind("<ButtonRelease-1>", lambda _e: self._stop_recording())
+        ttk.Button(voice_row, text="Start", command=self._start_recording).pack(side=tk.LEFT, padx=4)
+        ttk.Button(voice_row, text="Stop", command=self._stop_recording).pack(side=tk.LEFT)
+        ttk.Label(voice_row, textvariable=self.recording_state_var).pack(side=tk.LEFT, padx=10)
+
+        ttk.Label(parent, textvariable=self.transcription_var, foreground="gray").pack(fill=tk.X, padx=8, pady=(0, 6))
 
         composer = ttk.Frame(parent)
         composer.pack(fill=tk.X, padx=8, pady=(0, 8))
@@ -112,7 +135,19 @@ class UIShell:
         self._add_setting(form, "Polling interval", "5 seconds (placeholder)")
         self._add_setting(form, "Trusted apps/paths", "Placeholder allowlist editor")
         self._add_setting(form, "High-risk actions", "Disabled (placeholder toggle)")
-        self._add_setting(form, "Voice", "Not enabled in this step")
+
+        voice_frame = ttk.LabelFrame(form, text="Voice (offline)")
+        voice_frame.pack(fill=tk.X, pady=10)
+
+        self.stt_enabled_var = tk.BooleanVar(value=self.voice.settings.stt_enabled)
+        self.tts_enabled_var = tk.BooleanVar(value=self.voice.settings.tts_enabled)
+        self.push_to_talk_var = tk.BooleanVar(value=self.voice.settings.push_to_talk)
+
+        ttk.Checkbutton(voice_frame, text="STT enabled", variable=self.stt_enabled_var, command=self._sync_voice_settings).pack(anchor=tk.W, padx=8, pady=2)
+        ttk.Checkbutton(voice_frame, text="TTS enabled", variable=self.tts_enabled_var, command=self._sync_voice_settings).pack(anchor=tk.W, padx=8, pady=2)
+        ttk.Checkbutton(voice_frame, text="Push-to-talk", variable=self.push_to_talk_var, command=self._sync_voice_settings).pack(anchor=tk.W, padx=8, pady=2)
+        self._add_setting(voice_frame, "Input device", self.voice.settings.input_device)
+        self._add_setting(voice_frame, "Output voice", self.voice.settings.output_voice)
 
     @staticmethod
     def _add_setting(parent: ttk.Frame, label: str, value: str) -> None:
@@ -122,6 +157,14 @@ class UIShell:
         ttk.Entry(row).pack(side=tk.LEFT, fill=tk.X, expand=True)
         ttk.Label(row, text=value, foreground="gray").pack(side=tk.LEFT, padx=8)
 
+    def _sync_voice_settings(self) -> None:
+        if self.stt_enabled_var is not None:
+            self.voice.settings.stt_enabled = self.stt_enabled_var.get()
+        if self.tts_enabled_var is not None:
+            self.voice.settings.tts_enabled = self.tts_enabled_var.get()
+        if self.push_to_talk_var is not None:
+            self.voice.settings.push_to_talk = self.push_to_talk_var.get()
+
     def _send_chat(self) -> None:
         if self.chat_input is None:
             return
@@ -129,6 +172,9 @@ class UIShell:
         if not text:
             return
         self.chat_input.delete(0, tk.END)
+        self._submit_user_text(text)
+
+    def _submit_user_text(self, text: str) -> None:
         self._append_chat("You", text)
 
         response = self.orchestrator.handle_request(text)
@@ -137,7 +183,41 @@ class UIShell:
             response = self.orchestrator.confirm_action(response.action_id, approved)
 
         self._append_structured_response(response)
+        self.voice.speak_response(response.message)
         self.refresh_all()
+
+    def _start_recording(self) -> None:
+        result = self.voice.start_recording()
+        if result.error:
+            self._set_recording_state(f"Mic error: {result.error}")
+            return
+        self._set_recording_state("Mic: recording...")
+
+    def _stop_recording(self) -> None:
+        result = self.voice.stop_recording_and_transcribe()
+        if result.error:
+            self._set_recording_state(f"Mic error: {result.error}")
+            self._set_transcription(result.error)
+            return
+
+        self._set_recording_state("Mic: idle")
+        if not result.transcription:
+            self._set_transcription("(empty transcription)")
+            return
+
+        self._set_transcription(result.transcription)
+        if self.chat_input is not None:
+            self.chat_input.delete(0, tk.END)
+            self.chat_input.insert(0, result.transcription)
+        self._submit_user_text(result.transcription)
+
+    def _set_recording_state(self, value: str) -> None:
+        if self.recording_state_var is not None:
+            self.recording_state_var.set(value)
+
+    def _set_transcription(self, value: str) -> None:
+        if self.transcription_var is not None:
+            self.transcription_var.set(f"Last transcription: {value}")
 
     def _confirm_medium_risk(self, response: AgentResponse) -> bool:
         return messagebox.askyesno(

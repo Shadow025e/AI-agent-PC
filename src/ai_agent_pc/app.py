@@ -7,6 +7,7 @@ from ai_agent_pc.orchestrator.agent_orchestrator import AgentOrchestrator
 from ai_agent_pc.security.permissions import PermissionManager
 from ai_agent_pc.tools.registry import ToolRegistry
 from ai_agent_pc.ui.shell import UIShell
+from ai_agent_pc.voice.service import VoiceService
 
 
 class App:
@@ -26,10 +27,12 @@ class App:
             monitoring=self.monitoring,
         )
         self.audit_logger = AuditLogger(self.config.db_path)
+        self.voice = VoiceService()
         self.ui = UIShell(
             orchestrator=self.orchestrator,
             monitoring=self.monitoring,
             audit_logger=self.audit_logger,
+            voice=self.voice,
         )
 
     def run(self) -> None:
